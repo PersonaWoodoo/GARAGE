@@ -1,0 +1,43 @@
+@dp.callback_query(F.data == "admin_deposits")
+async def admin_deposits(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    deposits = get_pending_deposits()
+    if not deposits:
+        await callback.message.edit_text("📭 Нет pending заявок на пополнение", reply_markup=admin_menu)
+        return
+    await callback.message.edit_text(
+        "📥 **Заявки на пополнение**\nВыбери заявку:",
+        reply_markup=admin_deposits_keyboard(deposits)
+    )
+
+@dp.callback_query(F.data.startswith("admin_deposit_"))
+async def view_deposit(callback: CallbackQuery):
+    operation_id = callback.data.split("_")[2]
+    cursor.execute("SELECT * FROM deposits WHERE operation_id = ?", (operation_id,))
+    d = cursor.fetchone()
+    
+    text = f"📥 **Заявка #{d[1]}**\n\n"
+    text += f"👤 Пользователь: @{d[3]}\n"
+    text += f"🆔 ID: {d[2]}\n"
+    text += f"💎 Валюта: {d[4]}\n"
+    text += f"💰 Сумма: {d[5]:,}\n"
+    text += f"💸 С комиссией: {d[6]:,}\n"
+    text += f"📅 Создана: {d[9]}\n"
+    
+    if d[8]:
+        await callback.message.answer_photo(d[8], caption=text, reply_markup=admin_action_keyboard(operation_id, "deposit"))
+    else:
+        await callback.message.edit_text(text, reply_markup=admin_action_keyboard(operation_id, "deposit"))
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("approve_deposit_"))
+async def approve_deposit(callback: CallbackQuery):
+    operation_id = callback.data.split("_")[2]
+    if approve_deposit(operation_id):
+        await callback.message.edit_text(f"✅ Пополнение #{operation_id} одобрено!", reply_markup=admin_menu)
+        # Отправка уведомления пользователю
+        cursor.execute("SELECT user_id, amount FROM deposits WHERE operation_id = ?", (operation_id,))
+        user_id, amount = cursor.fetchone()
+        await bot.send_message(user_id, f"✅ Ваше пополнение на {amount} монет одобрено!")
+    await callback.answer()
